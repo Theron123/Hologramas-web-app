@@ -1,0 +1,225 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+  padding: 2rem;
+  animation: fadeIn 0.5s ease forwards;
+  max-width: 560px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* ── Holographic Orb ── */
+.orb {
+  position: relative;
+  width: 160px;
+  height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.orbCore {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--holo-cyan), var(--holo-violet));
+  box-shadow: 0 0 30px var(--holo-cyan), 0 0 60px rgba(0, 212, 255, 0.3);
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+.orbRing1,
+.orbRing2,
+.orbRing3 {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid;
+}
+
+.orbRing1 {
+  width: 90px;
+  height: 90px;
+  border-color: rgba(0, 212, 255, 0.6);
+  animation: spin-slow 3s linear infinite;
+  box-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
+}
+
+.orbRing2 {
+  width: 120px;
+  height: 120px;
+  border-color: rgba(123, 47, 255, 0.4);
+  animation: spin-slow 5s linear infinite reverse;
+}
+
+.orbRing3 {
+  width: 155px;
+  height: 155px;
+  border-color: rgba(0, 212, 255, 0.15);
+  animation: spin-slow 8s linear infinite;
+}
+
+/* Particles orbiting the core */
+.orbParticles {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  animation: spin-slow 4s linear infinite;
+}
+
+.particle {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--holo-cyan);
+  top: 50%;
+  left: 50%;
+  box-shadow: 0 0 6px var(--holo-cyan);
+  transform:
+    rotate(calc(var(--i) * 45deg))
+    translateX(55px)
+    translateY(-50%);
+}
+
+/* ── Text ── */
+.textBlock {
+  text-align: center;
+}
+
+.title {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--holo-cyan), var(--holo-violet));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.subtitle {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin-top: 0.35rem;
+}
+
+/* ── Progress ── */
+.progressWrapper {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.progressBar {
+  height: 4px;
+  background: var(--border-subtle);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--holo-cyan), var(--holo-violet));
+  border-radius: var(--radius-full);
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+
+.progressFill::after {
+  content: '';
+  position: absolute;
+  right: -4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 10px;
+  height: 10px;
+  background: var(--holo-cyan);
+  border-radius: 50%;
+  box-shadow: var(--glow-sm);
+}
+
+.progressInfo {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.stepText {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.percentText {
+  font-size: 0.82rem;
+  color: var(--holo-cyan);
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+/* ── Steps Grid ── */
+.stepsGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem;
+  border-radius: var(--radius-md);
+  opacity: 0.35;
+  transition: all 0.3s ease;
+}
+
+.step.done {
+  opacity: 0.6;
+}
+
+.step.active {
+  opacity: 1;
+  background: rgba(0, 212, 255, 0.06);
+  border: 1px solid rgba(0, 212, 255, 0.15);
+}
+
+.stepDot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-holo);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: all 0.3s ease;
+}
+
+.step.done .stepDot {
+  background: rgba(0, 255, 136, 0.15);
+  border-color: var(--holo-green);
+  color: var(--holo-green);
+}
+
+.step.active .stepDot {
+  background: rgba(0, 212, 255, 0.1);
+  border-color: var(--holo-cyan);
+  color: var(--holo-cyan);
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+.stepLabel {
+  font-size: 0.83rem;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.step.active .stepLabel {
+  color: var(--text-primary);
+}

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Position Detector</title>
+    <style>
+        body {
+            background-color: #111;
+            color: #fff;
+            font-family: sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+        #status {
+            font-size: 48px;
+            font-weight: bold;
+            text-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+            transition: all 0.3s ease;
+        }
+        .left { color: #ff3b30; }
+        .center { color: #4cd964; }
+        .right { color: #007aff; }
+        .error { color: #ff9500; font-size: 24px; }
+    </style>
+</head>
+<body>
+
+    <div id="status">INITIALIZING...</div>
+
+    <script>
+        const API_URL = 'http://localhost:55080/v1/recognition';
+        let lastDetectedTrack = "";
+        let isOffline = false;
+        const statusEl = document.getElementById('status');
+
+        function post(msg) {
+            // 1. WebView2 Bridge (Windows DISPL Designer)
+            if (window.chrome?.webview) {
+                window.chrome.webview.postMessage(msg);
+            }
+            // 2. Iframe Bridge (for local development and Next.js direct integration)
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage({ type: 'FACE_POSITION', position: msg }, '*');
+            }
+            console.log("POST_MESSAGE:", msg);
+        }
+
+        async function checkPosition() {
+            try {
+                const res = await fetch(API_URL, { 
+                    headers: { 'X-PIN-code': '2693' },
+                    signal: AbortSignal.timeout(80) // Prevents requests from stacking up if lagging
+                });
+                
+                if (!res.ok) throw new Error('API response not OK');
+                const d = await res.json();
+                
+                if (isOffline) {
+                    console.log("Recognition service reconnected.");
+                    isOffline = false;
+                }
+
+                if (d.faces && d.faces.length > 0) {
+                    const cameraWidth = d.width || d.frame_width || 1280; 
+                    const rawXCenter = d.faces[0].bounding_box[0] + (d.faces[0].bounding_box[2] / 2);
+                    const xCenter = cameraWidth - rawXCenter; 
+
+                    const oneThird = cameraWidth / 3;
+                    const twoThirds = oneThird * 2;
+
+                    let currentTrack = "";
+                    if (xCenter < oneThird) {
+                        currentTrack = "LEFT";
+                    } else if (xCenter >= oneThird && xCenter < twoThirds) {
+                        currentTrack = "CENTER";
+                    } else {
+                        currentTrack = "RIGHT";
+                    }
+
+                    if (currentTrack !== lastDetectedTrack) {
+                        lastDetectedTrack = currentTrack;
+                        post(currentTrack);
+                        
+                        statusEl.className = currentTrack.toLowerCase();
+                        statusEl.textContent = currentTrack;
+                    }
+                } else {
+                    statusEl.className = "";
+                    statusEl.textContent = "NO FACE DETECTED";
+                    if (lastDetectedTrack !== "NONE") {
+                        lastDetectedTrack = "NONE";
+                        post("NONE");
+                    }
+                }
+            } catch (e) { 
+                if (!isOffline) {
+                    console.warn("Recognition service offline or connection error:", e.message);
+                    isOffline = true;
+                }
+                statusEl.className = "error";
+                statusEl.textContent = "OFFLINE / ERROR";
+                if (lastDetectedTrack !== "OFFLINE") {
+                    lastDetectedTrack = "OFFLINE";
+                    post("OFFLINE");
+                }
+            }
+        }
+
+        // Poll the face recognition API every 100ms
+        setInterval(checkPosition, 100);
+    </script>
+</body>
+</html>

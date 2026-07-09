@@ -1,0 +1,37 @@
+{
+  "name": "holoforge",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@fal-ai/client": "^1.5.2",
+    "@google/generative-ai": "^0.24.1",
+    "@gradio/client": "^2.2.1",
+    "@react-three/drei": "^9.121.4",
+    "@react-three/fiber": "^9.1.2",
+    "@react-three/postprocessing": "^3.0.4",
+    "framer-motion": "^11.15.0",
+    "gsap": "^3.12.5",
+    "next": "^16.2.7",
+    "openai": "^4.103.0",
+    "postprocessing": "^6.36.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "three": "^0.172.0",
+    "zustand": "^5.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@types/three": "^0.172.0",
+    "eslint": "^8",
+    "eslint-config-next": "15.3.3",
+    "typescript": "^5"
+  }
+}

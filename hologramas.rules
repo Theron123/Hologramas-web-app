@@ -1,0 +1,132 @@
+# Hologramas.rules - Guías de Desarrollo e Instructivo de Arquitectura
+Este archivo sirve como documentación oficial del proyecto HoloForge y contiene las reglas y guías para futuros desarrolladores o asistentes de IA (asistent rules) al realizar modificaciones en la base de código.
+
+---
+
+## 1. Arquitectura del Proyecto (Clean Architecture)
+El proyecto está diseñado bajo principios de Arquitectura Limpia, dividiendo la lógica en 4 capas desacopladas dentro del directorio `src/`:
+
+```
+src/
+├── domain/            # Capa de Dominio (Entidades de negocio y contratos de repositorios)
+│   ├── entities/      # Modelos puros (Product.ts, Campaign.ts)
+│   └── repositories/  # Interfaces/Contratos para servicios y APIs
+│
+├── application/       # Capa de Aplicación (Casos de uso e interacciones de negocio)
+│   └── use-cases/     # Ejecutores lógicos (GenerateHologramUseCase, GenerateCampaignUseCase)
+│
+├── infrastructure/    # Capa de Infraestructura (Implementaciones de APIs, base de datos y adaptadores)
+│   ├── services/      # Clientes de IA (GeminiAIServices, FalAIImageTo3DAdapter, GradioImageTo3DAdapter)
+│   └── repositories/  # Repositorios en memoria o conectores
+│
+├── presentation/      # Capa de Presentación (Interfaz de usuario y estado)
+│   ├── components/    # Componentes React divididos por área (hologram, campaign, upload)
+│   ├── stores/        # Estado global centralizado con Zustand (campaignStore.ts)
+│   └── utils/         # Funciones auxiliares de UI (colorExtractor.ts)
+│
+└── app/               # Enrutador Next.js y Puntos de Entrada API
+    ├── api/           # Endpoints de servidor (image-to-3d, campaigns/generate)
+    └── page.tsx       # Componente principal / Orquestador de la App
+```
+
+---
+
+## 2. Reglas del Pipeline Visual 3D (Three.js & R3F)
+El visualizador holográfico está implementado en [HologramViewer.tsx](file:///Users/juanjosepacheco/Hologramas/src/presentation/components/hologram/HologramViewer.tsx). Sigue estas directrices técnicas para mantener la alta calidad gráfica:
+
+### A. Nitidez y Calidad de Texturas (3D GLB)
+*   **Anisotropía:** Todas las texturas cargadas desde archivos GLTF deben configurarse con el nivel máximo de filtrado anisotrópico disponible en la GPU del usuario.
+    ```typescript
+    texture.anisotropy = gl.capabilities.getMaxAnisotropy() || 1;
+    ```
+*   **Filtros:** Forzar filtros de minificación lineales con mipmapping (`THREE.LinearMipmapLinearFilter`) para evitar ruido visual en la distancia.
+*   **Mipmap Bias:** Para forzar mayor nitidez de textura (especialmente en calcomanías, logos y textos del producto en ángulos inclinados), se debe fijar un sesgo negativo en la GPU:
+    ```typescript
+    texture.mipMapBias = -0.8;
+    ```
+*   **Opacidad:** En el modo realista (`textured`), los materiales deben ser opacos (`m.transparent = false`, `m.opacity = 1.0`). La translucidez se reserva exclusivamente para los modos `neon` y `wireframe`.
+
+### B. Nube de Puntos Volumétrica (2.5D)
+*   **Resolución:** La cuadrícula interna de extracción de píxeles debe mantenerse en una densidad ultra-nítida de **$256 \times 256$ píxeles** (más de 65,000 puntos potenciales) para dibujar textos y logos definidos.
+*   **Tamaño de Partícula:** La propiedad `size` del `PointsMaterial` debe oscilar entre `0.005` y `0.007` para simular una pantalla holográfica densa (micro-LEDs) en vez de píxeles gigantes sueltos.
+*   **Filtro de Nitidez (Convolución):** Antes de instanciar las partículas, el lienzo debe procesarse con la función `sharpenImageData`, aplicando un filtro de convolución matemática tipo *Unsharp Mask* para perfilar textos y bordes.
+*   **Preservación de Detalles:** Si la imagen del producto ya tiene transparencia alfa (PNG recortado), el sistema **debe desactivar** los filtros de fondo para colores blanco y negro puros, asegurando que elementos como letras oscuras o neumáticos no se borren de la nube de puntos.
+
+---
+
+## 3. Reglas del Exportador de Video (WebM / MP4)
+El grabador de Canvas en tiempo real está implementado a través del subcomponente `CanvasRecorderController` dentro del visor 3D:
+
+*   **Bucle Limpio (Loop Publicitario):** Durante la grabación, se debe activar la propiedad `hideDecorations = true` para ocultar automáticamente las estrellas, partículas de fondo, el suelo cuadriculado de neón, el cono de luz y las jaulas/anillos de profundidad. El video de publicidad final debe contener **únicamente el producto en pantalla**.
+*   **Anulación de Rotación Interactiva:** Durante la grabación (4 segundos), la rotación automática interactiva del usuario se desactiva. En su lugar, el modelo 3D realiza una interpolación exacta de $0^\circ$ a $360^\circ$ sincronizada con el tiempo de reloj:
+    ```typescript
+    const t = Math.min(4000, elapsed) / 1000;
+    groupRef.current.rotation.y = (t / 4) * Math.PI * 2; // Giro completo en 4s
+    ```
+*   **Exportación MP4 (Fondo Negro Puro):** Para proyectores holográficos de ventilador LED o pirámides físicas, la grabación MP4 debe forzar un fondo negro puro (`#000000`). En Three.js esto se logra instanciando condicionalmente:
+    ```tsx
+    {showBlackBg && <color attach="background" args={['#000000']} />}
+    ```
+*   **Exportación WebM (Transparente):** La grabación WebM debe conservar el fondo transparente (`gl={{ alpha: true }}`) para reproductores que admiten transparencia nativa.
+
+---
+
+## 4. Pipeline de Pre-Procesamiento por IA (Upscaling)
+*   Para maximizar la nitidez de las texturas que el generador 3D (Trellis) hornea dentro del archivo `.glb` final, el backend implementa un pre-pase de súper-resolución con **Real-ESRGAN (`fal-ai/esrgan`)** dentro de [FalAIImageTo3DAdapter.ts](file:///Users/juanjosepacheco/Hologramas/src/infrastructure/services/FalAIImageTo3DAdapter.ts).
+*   Cualquier modificación al flujo de generación 3D debe mantener este paso de mejora de imagen para evitar que el modelo 3D final tenga texturas borrosas o distorsionadas.
+
+---
+
+## 5. Limitación de Navegadores y WhatsApp
+*   **WhatsApp no soporta videos WebM** de forma nativa en la mayoría de dispositivos móviles.
+*   Dado que Chrome y Firefox en sistemas de escritorio restringen el `MediaRecorder` a códecs WebM, los videos descargados desde allí no se reproducirán en los chats.
+*   **REGLA DE USO:** Se recomienda a los usuarios y operadores correr la aplicación en **Safari** (Mac/iOS) al exportar campañas. Safari soporta la grabación nativa en `video/mp4;codecs=h264`, generando archivos MP4 listos para ser enviados y reproducidos directamente en WhatsApp.
+
+---
+
+## 6. Estrategia de Resiliencia y Fallback (Capa de API)
+Para asegurar que el sistema se mantenga operativo en demostraciones o bajo cuotas agotadas de APIs externas, los endpoints implementan lógica de redundancia automática:
+
+### A. Endpoint `/api/campaigns/generate` (Generación de Campaña)
+*   **Jerarquía de Proveedores:** Verifica en orden de prioridad: `GEMINI_API_KEY` (Gemini 2.5) $\to$ `OPENAI_API_KEY` (GPT-4o) $\to$ `MockAIServices` (Simulador local).
+*   **Tolerancia a Fallos Dinámica:** Si el proveedor activo de IA (Gemini/OpenAI) devuelve un error de red, cuota o tiempo de espera durante la llamada, el endpoint lo captura mediante un bloque `try/catch` e importa de forma asíncrona los servicios `MockAIServices` para finalizar la ejecución. Esto evita que la interfaz del usuario muestre un error fatal.
+
+### B. Endpoint `/api/ai/image-to-3d` (Conversión 3D)
+*   **Jerarquía de Reconstrucción:**
+    1.  Si `FAL_KEY` está configurada y activa (no bloqueada ni de prueba), utiliza `FalAIImageTo3DAdapter` (ESRGAN + Trellis 3D).
+    2.  Si la clave no está disponible, utiliza `GradioImageTo3DAdapter` (conexión directa y gratuita a espacios públicos de Hugging Face).
+    3.  Si se solicita explícitamente (`forceMock: true`), utiliza `MockImageTo3DAdapter` cargando un modelo GLB de demostración predefinido.
+*   **Configuración de Timeout:** El archivo de ruta configura `export const maxDuration = 120;` para evitar que Next.js o Vercel corten la conexión de forma prematura durante la generación de mallas.
+
+---
+
+## 7. Reglas de Optimización de Campaña por IA y Puntuación de Calidad
+Para maximizar la efectividad de las campañas y la nitidez de los modelos, el sistema incluye un widget interactivo con dos barras de progreso de 0 a 100%:
+
+### A. Barra 1: Precisión Geométrica / Textura (Basada en cantidad de fotos del carrusel)
+*   **0 fotos:** 0% (Sin imágenes).
+*   **1 foto:** 50% (Básico - Vista única). Mensaje recomendando agregar más fotos para mejor reconstrucción y texturas.
+*   **2 fotos:** 80% (Bueno - Vista múltiple).
+*   **3+ fotos:** 100% (Excelente - Carrusel completo). Habilita el análisis multimodal y fidelidad máxima.
+
+### B. Barra 2: Relevancia del Copy de Campaña (Basada en la especificidad del nombre del producto)
+*   **0-3 letras:** 10% (Insuficiente). Mensaje pidiendo escribir un nombre descriptivo.
+*   **4-10 letras:** 50% (Genérico). Mensaje aconsejando agregar marca y modelo para copys sumamente personalizados.
+*   **>10 letras:** 100% (Excelente). Activa textos de conversión de alta gama.
+
+### C. Reglas de Prompts de IA (Gemini)
+*   **Visión:** El prompt debe exigir a Gemini sintetizar las imágenes provistas del carrusel para buscar microdetalles e identificar materiales específicos.
+*   **Redacción de Copys:** Debe guiar a la IA a evitar a toda costa palabras vagas (como "este producto") e integrar el nombre completo del producto en todas las plataformas.
+
+---
+
+## 8. Comandos del Ciclo de Desarrollo
+Para arrancar y verificar el proyecto, utiliza los comandos estándar desde la raíz del proyecto (`/Users/juanjosepacheco/Hologramas`):
+
+*   **Instalar Dependencias:** `npm install`
+*   **Iniciar Servidor de Desarrollo:** `npm run dev`
+*   **Ejecutar Análisis Estático (Lints):** `npm run lint`
+*   **Construir Compilación de Producción (Obligatorio para validar cambios):** `npm run build`
+    *(Nota: Siempre corre este comando después de modificar los tipos o estructuras de componentes para asegurar que no haya errores estáticos en TypeScript).*
+
+

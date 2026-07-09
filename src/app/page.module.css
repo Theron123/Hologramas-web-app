@@ -1,0 +1,256 @@
+.appShell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Navbar ── */
+.navbar {
+  height: 60px;
+  padding: 0 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-subtle);
+  background: rgba(2, 4, 8, 0.8);
+  backdrop-filter: blur(20px);
+  position: relative;
+  z-index: var(--z-raised);
+  flex-shrink: 0;
+}
+
+.navBrand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-shrink: 0;
+}
+
+.logoMark {
+  display: flex;
+  animation: float 3s ease-in-out infinite;
+}
+
+.brandName {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, var(--holo-cyan), var(--holo-violet));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.brandTag {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 700;
+  background: rgba(123, 47, 255, 0.2);
+  color: #a855f7;
+  border: 1px solid rgba(123, 47, 255, 0.3);
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.1em;
+}
+
+/* Steps indicator */
+.navSteps {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.navStep {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.9rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  position: relative;
+  transition: color var(--transition-base);
+}
+
+.navStep:not(:last-child)::after {
+  content: '›';
+  position: absolute;
+  right: -2px;
+  color: var(--border-subtle);
+  font-size: 1.1rem;
+}
+
+.navStep.navStepActive {
+  color: var(--holo-cyan);
+}
+
+.navStep.navStepDone {
+  color: var(--holo-green);
+}
+
+.stepNum {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.navStepDone .stepNum {
+  background: rgba(0, 255, 136, 0.15);
+}
+
+.navStepActive .stepNum {
+  background: rgba(0, 212, 255, 0.15);
+  box-shadow: var(--glow-sm);
+}
+
+.stepLbl {
+  font-weight: 600;
+  font-size: 0.78rem;
+}
+
+.navRight {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* ── Main Layout ── */
+.mainLayout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  flex: 1;
+  overflow: hidden;
+}
+
+@media (max-width: 1024px) {
+  .mainLayout {
+    grid-template-columns: 1fr;
+    grid-template-rows: 50vh 1fr;
+  }
+}
+
+/* ── Hologram Section ── */
+.hologramSection {
+  position: relative;
+  background: radial-gradient(ellipse 80% 80% at 50% 50%, rgba(0, 212, 255, 0.04), transparent);
+  border-right: 1px solid var(--border-subtle);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.hologramFrame {
+  flex: 1;
+  position: relative;
+}
+
+/* Corner frames */
+.frameCorner {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-top: 2px solid rgba(0, 212, 255, 0.55);
+  border-left: 2px solid rgba(0, 212, 255, 0.55);
+  z-index: 10;
+  pointer-events: none;
+}
+.topLeft  { top: 10px; left: 10px; }
+.topRight { top: 10px; right: 10px; transform: scaleX(-1); }
+.btmLeft  { bottom: 44px; left: 10px; transform: scaleY(-1); }
+.btmRight { bottom: 44px; right: 10px; transform: scale(-1); }
+
+/* HUD top */
+.hudTop {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* HUD bottom bar */
+.hudBottom {
+  height: 36px;
+  padding: 0 1rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  border-top: 1px solid var(--border-subtle);
+  background: rgba(2, 4, 8, 0.6);
+  flex-shrink: 0;
+}
+
+.hudStat {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.hudLabel {
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  color: var(--text-muted);
+  letter-spacing: 0.1em;
+}
+
+.hudValue {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--holo-cyan);
+}
+
+.hudDivider {
+  width: 1px;
+  height: 16px;
+  background: var(--border-subtle);
+}
+
+/* ── Content Section ── */
+.contentSection {
+  padding: 2rem 1.5rem;
+  overflow-y: auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  background: rgba(5, 13, 24, 0.3);
+}
+
+/* ── Hologram Placeholder ── */
+.hologramPlaceholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.placeholderOrb {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  border: 2px solid var(--border-holo);
+  animation: pulse-glow 2s ease-in-out infinite, spin-slow 6s linear infinite;
+}
+
+/* ── Status Bar ── */
+.statusBar {
+  height: 28px;
+  padding: 0 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--border-subtle);
+  background: rgba(2, 4, 8, 0.9);
+  flex-shrink: 0;
+}
