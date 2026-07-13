@@ -307,6 +307,7 @@ export default function HomePage() {
                 particleCount={hologramSettings.particleCount}
                 hologramMode={hologramSettings.hologramMode}
                 productColor={productColor}
+                bloomStrength={hologramSettings.bloomStrength}
               />
             </Suspense>
           </div>

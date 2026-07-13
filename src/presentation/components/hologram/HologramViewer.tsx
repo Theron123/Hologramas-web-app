@@ -3,6 +3,7 @@
 import { useRef, useMemo, Suspense, useEffect, useState, Component, ReactNode } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Stars, Float, useGLTF, Center, useTexture } from '@react-three/drei';
+import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import type { CampaignTheme } from '@domain/entities/Campaign';
 import { useCampaignStore } from '@presentation/stores/campaignStore';
@@ -338,7 +339,7 @@ function ProjectionCone({ color }: { color: string }) {
   return (
     <mesh ref={ref} position={[0, -0.75, 0]}>
       {/* Cylinder open ended: radiusTop=0.15, radiusBottom=0.8, height=1.7 */}
-      <cylinderGeometry args={[0.2, 0.9, 1.7, 32, 1, true]} />
+      <cylinderGeometry args={[0.2, 0.9, 1.7, 64, 1, true]} />
       <meshBasicMaterial
         color={color}
         transparent
@@ -447,7 +448,7 @@ function HologramVolumetricParticles({
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        const size = 256; // 256x256 grid for extremely detailed volumetric text and logos
+        const size = 512; // 512x512 grid (4x the points of the previous 256 grid) for razor-sharp volumetric text and logos — GPU-bound, safe on discrete graphics cards
         canvas.width = size;
         canvas.height = size;
         ctx.drawImage(img, 0, 0, size, size);
@@ -1065,6 +1066,7 @@ export interface HologramViewerProps {
   particleCount?: number;
   hologramMode?: 'textured' | 'neon' | 'wireframe';
   productColor?: string;
+  bloomStrength?: number;
 }
 
 export default function HologramViewer({
@@ -1078,6 +1080,7 @@ export default function HologramViewer({
   particleCount = 150,
   hologramMode = 'textured',
   productColor = '',
+  bloomStrength = 1.5,
 }: HologramViewerProps) {
   const [facePosition, setFacePosition] = useState<'LEFT' | 'CENTER' | 'RIGHT' | 'NONE' | 'OFFLINE'>('NONE');
   
@@ -1140,7 +1143,8 @@ export default function HologramViewer({
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <Canvas
         camera={{ position: [0, 1.5, 4.5], fov: 45 }}
-        gl={{ antialias: true, alpha: true }}
+        gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
+        dpr={[1, 2]}
         style={{ background: 'transparent' }}
       >
         {showBlackBg && <color attach="background" args={['#000000']} />}
@@ -1223,6 +1227,16 @@ export default function HologramViewer({
           maxDistance={9}
           makeDefault
         />
+
+        {/* Real Bloom pass — replaces the previously dead "Bloom" slider */}
+        <EffectComposer multisampling={0} enableNormalPass={false}>
+          <Bloom
+            intensity={bloomStrength}
+            luminanceThreshold={0.15}
+            luminanceSmoothing={0.9}
+            mipmapBlur
+          />
+        </EffectComposer>
       </Canvas>
 
       {/* Recording progress overlay */}
