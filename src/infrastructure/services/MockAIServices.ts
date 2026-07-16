@@ -39,7 +39,7 @@ const MOCK_MODEL_CATEGORIES: Array<{ pattern: RegExp; url: string }> = [
 ];
 
 export class MockImageTo3DAdapter implements IImageTo3DRepository {
-  async convert(imageUrl: string, options?: ImageTo3DOptions): Promise<ImageTo3DResult> {
+  async convert(imageUrls: string[], options?: ImageTo3DOptions): Promise<ImageTo3DResult> {
     // Simulate processing time (fast quality ~3s, full quality ~6s)
     const delay = options?.quality === 'quality' ? 6000 : 3000;
     await new Promise((r) => setTimeout(r, delay));
@@ -51,9 +51,9 @@ export class MockImageTo3DAdapter implements IImageTo3DRepository {
       return { modelUrl: match.url, isMock: true };
     }
 
-    // Default fallback: project the actual uploaded image URL as a 2.5D hologram
+    // Default fallback: project the first uploaded image URL as a 2.5D hologram
     return {
-      modelUrl: imageUrl,
+      modelUrl: imageUrls[0],
       isMock: true,
     };
   }

@@ -36,7 +36,10 @@ export class GradioImageTo3DAdapter implements IImageTo3DRepository {
     this.hfToken = process.env.HF_TOKEN;
   }
 
-  async convert(imageUrl: string, options?: ImageTo3DOptions): Promise<ImageTo3DResult> {
+  async convert(imageUrls: string[], options?: ImageTo3DOptions): Promise<ImageTo3DResult> {
+    // These free HF Spaces only accept a single image; multi-angle uploads only benefit the
+    // fal.ai path (FalAIImageTo3DAdapter), so we just use the first photo here.
+    const imageUrl = imageUrls[0];
     console.log(`GradioImageTo3DAdapter: Starting 3D model generation on ${TRELLIS_SPACE}...`);
 
     let localTempPath: string | null = null;

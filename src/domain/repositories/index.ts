@@ -44,10 +44,10 @@ export interface ICopyGenerationRepository {
 // ────────────────────────────────────────────────
 export interface IImageTo3DRepository {
   /**
-   * Convert a 2D image URL into a 3D model.
-   * Returns the URL of the generated .glb file.
+   * Convert one or more 2D image URLs (multiple angles of the same product, when available)
+   * into a 3D model. Returns the URL of the generated .glb file.
    */
-  convert(imageUrl: string, options?: ImageTo3DOptions): Promise<ImageTo3DResult>;
+  convert(imageUrls: string[], options?: ImageTo3DOptions): Promise<ImageTo3DResult>;
 }
 
 export interface ImageTo3DOptions {

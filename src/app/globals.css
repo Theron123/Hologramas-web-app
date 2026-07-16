@@ -28,6 +28,7 @@
 
   /* ── Text ── */
   --text-primary: #e8f4ff;
+  --text-main: #e8f4ff;
   --text-secondary: rgba(232, 244, 255, 0.6);
   --text-muted: rgba(232, 244, 255, 0.35);
   --text-holo: #00d4ff;

@@ -6,11 +6,14 @@ import { GradioImageTo3DAdapter } from '@infrastructure/services/GradioImageTo3D
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json() as { imageUrl: string; productName?: string; quality?: 'fast' | 'quality'; forceMock?: boolean };
-    const { imageUrl, productName = '', quality = 'fast', forceMock = false } = body;
+    const body = await req.json() as { imageUrl?: string; imageUrls?: string[]; productName?: string; quality?: 'fast' | 'quality'; forceMock?: boolean };
+    // Accept either a single imageUrl (legacy) or imageUrls (multi-angle, preferred — improves
+    // 3D reconstruction quality on providers that support it, e.g. fal.ai's Trellis multi-image mode).
+    const imageUrls = body.imageUrls?.length ? body.imageUrls : (body.imageUrl ? [body.imageUrl] : []);
+    const { productName = '', quality = 'fast', forceMock = false } = body;
 
-    if (!imageUrl) {
-      return NextResponse.json({ error: 'imageUrl is required' }, { status: 400 });
+    if (imageUrls.length === 0) {
+      return NextResponse.json({ error: 'imageUrl or imageUrls is required' }, { status: 400 });
     }
 
     // Use real fal.ai adapter if API key is active, or use free Gradio client, or use mock in demo mode.
@@ -40,7 +43,7 @@ export async function POST(req: NextRequest) {
     const useCase = new GenerateHologramUseCase(repo);
 
     const result = await useCase.execute({
-      imageUrl,
+      imageUrls,
       productName,
       options: {
         quality,

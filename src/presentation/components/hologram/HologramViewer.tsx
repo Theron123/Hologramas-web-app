@@ -2,8 +2,9 @@
 
 import { useRef, useMemo, Suspense, useEffect, useState, Component, ReactNode } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, Stars, Float, useGLTF, Center, useTexture } from '@react-three/drei';
+import { OrbitControls, Stars, Float, useGLTF, Center, useTexture, Environment } from '@react-three/drei';
 import { EffectComposer, Bloom, ChromaticAberration, Scanline } from '@react-three/postprocessing';
+import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import * as THREE from 'three';
 import type { CampaignTheme } from '@domain/entities/Campaign';
 import { useCampaignStore } from '@presentation/stores/campaignStore';
@@ -211,6 +212,7 @@ function HologramModel({
   hologramMode = 'textured',
   productColor,
   hideDecorations = false,
+  productName = 'holograma',
 }: {
   url: string;
   theme: CampaignTheme;
@@ -219,6 +221,7 @@ function HologramModel({
   hologramMode?: 'textured' | 'neon' | 'wireframe';
   productColor?: string;
   hideDecorations?: boolean;
+  productName?: string;
 }) {
   const groupRef = useRef<THREE.Group>(null);
   const matRef   = useRef<THREE.ShaderMaterial | null>(null);
@@ -233,6 +236,7 @@ function HologramModel({
   // Build and apply materials depending on hologramMode
   useEffect(() => {
     const createdMaterials: THREE.Material[] = [];
+    const createdGeometries: THREE.BufferGeometry[] = [];
     const maxAnisotropy = gl.capabilities.getMaxAnisotropy() || 1;
 
     if (hologramMode === 'neon') {
@@ -241,17 +245,44 @@ function HologramModel({
       applyHolographicToScene(clonedScene, mat);
       return () => mat.dispose();
     } else if (hologramMode === 'wireframe') {
+      // Technical/CAD-style wireframe: real edges only (no triangulation diagonals) plus
+      // vertex points, in a neutral white/gray tone — not the neon holographic look. The base
+      // mesh is made invisible but still writes depth, so far-side edges/points are correctly
+      // hidden behind the near surface instead of showing through as an X-ray.
       clonedScene.traverse((child) => {
         if ((child as THREE.Mesh).isMesh) {
           const mesh = child as THREE.Mesh;
-          const mat = new THREE.MeshBasicMaterial({
-            color: theme.primaryColor,
-            wireframe: true,
-            transparent: true,
-            opacity: 0.75, // Increased from 0.35 to 0.75 for visual clarity
+
+          const depthOnlyMat = new THREE.MeshBasicMaterial({
+            colorWrite: false,
+            depthWrite: true,
           });
-          createdMaterials.push(mat);
-          mesh.material = mat;
+          createdMaterials.push(depthOnlyMat);
+          mesh.material = depthOnlyMat;
+
+          const edgesGeometry = new THREE.EdgesGeometry(mesh.geometry, 15);
+          createdGeometries.push(edgesGeometry);
+          const edgesMaterial = new THREE.LineBasicMaterial({
+            color: '#e8eef2',
+            transparent: true,
+            opacity: 0.85,
+          });
+          createdMaterials.push(edgesMaterial);
+          const edges = new THREE.LineSegments(edgesGeometry, edgesMaterial);
+          edges.renderOrder = 1;
+          mesh.add(edges);
+
+          const pointsMaterial = new THREE.PointsMaterial({
+            color: '#ffffff',
+            size: 0.012,
+            sizeAttenuation: true,
+            transparent: true,
+            opacity: 0.9,
+          });
+          createdMaterials.push(pointsMaterial);
+          const points = new THREE.Points(mesh.geometry, pointsMaterial);
+          points.renderOrder = 2;
+          mesh.add(points);
         }
       });
     } else {
@@ -278,9 +309,60 @@ function HologramModel({
     }
 
     return () => {
+      createdGeometries.forEach((g) => g.dispose());
       createdMaterials.forEach((m) => m.dispose());
     };
   }, [clonedScene, theme.glowColor, glowIntensity, hologramMode, theme.primaryColor, productColor]);
+
+  // Export the model exactly as currently displayed (whichever render style is active) to a
+  // downloadable .glb, triggered by CampaignEditor's download button via a window event —
+  // mirrors the existing hologram-export-start pattern used for video recording.
+  useEffect(() => {
+    const handleExportRequest = () => {
+      // Export a dedicated clone so this never mutates what's on screen.
+      const exportScene = clonedScene.clone(true);
+
+      if (hologramMode === 'neon') {
+        // glTF/GLB has no concept of a custom real-time GLSL shader, so the live glow
+        // ShaderMaterial can't be baked in — GLTFExporter would just drop it. Swap in the
+        // closest standard-material approximation (same color/glow) just for this export.
+        exportScene.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) {
+            (child as THREE.Mesh).material = new THREE.MeshStandardMaterial({
+              color: theme.glowColor,
+              emissive: theme.glowColor,
+              emissiveIntensity: glowIntensity,
+              transparent: true,
+              opacity: 0.85,
+              metalness: 0,
+              roughness: 0.4,
+            });
+          }
+        });
+      }
+
+      const exporter = new GLTFExporter();
+      exporter.parse(
+        exportScene,
+        (result) => {
+          const blob = new Blob([result as ArrayBuffer], { type: 'model/gltf-binary' });
+          const blobUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = `${productName.toLowerCase().replace(/\s+/g, '_')}_${hologramMode}.glb`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(blobUrl);
+        },
+        (error) => console.error('GLB export failed:', error),
+        { binary: true },
+      );
+    };
+
+    window.addEventListener('hologram-glb-export-request', handleExportRequest);
+    return () => window.removeEventListener('hologram-glb-export-request', handleExportRequest);
+  }, [clonedScene, hologramMode, theme.glowColor, glowIntensity, productName]);
 
   // Animate time uniform + rotation
   useFrame(({ clock }, delta) => {
@@ -303,8 +385,9 @@ function HologramModel({
       <Center>
         <primitive object={clonedScene} />
         
-        {/* Wireframe ghost (outer shell, slightly larger) - render inside Center to align perfectly */}
-        {hologramMode !== 'textured' && (
+        {/* Wireframe ghost (outer shell, slightly larger) - only for the neon glow look;
+            'wireframe' mode already draws real edges directly on the mesh above. */}
+        {hologramMode === 'neon' && (
           <WireframeShell scene={clonedScene} color={theme.primaryColor} />
         )}
       </Center>
@@ -1211,6 +1294,13 @@ export default function HologramViewer({
         <SceneLights theme={theme} hologramMode={hologramMode} />
         <fog attach="fog" args={['#020408', 10, 22]} />
 
+        {/* Image-based lighting for PBR reflections — without this, metallic materials from
+            AI-generated GLBs (metalnessFactor near 1) render essentially black, since metals
+            have almost no diffuse response and rely on reflected environment light to read as
+            anything but flat dark shapes. Only needed in 'textured' mode; neon/wireframe replace
+            materials with non-metallic emissive/basic materials that don't sample the environment. */}
+        {hologramMode === 'textured' && <Environment preset="city" environmentIntensity={0.6} />}
+
         <CanvasRecorderController
           productName={productName}
           isRecording={isRecording}
@@ -1267,6 +1357,7 @@ export default function HologramViewer({
                       hologramMode={hologramMode}
                       productColor={productColor}
                       hideDecorations={hideDecorations}
+                      productName={productName}
                     />
                   </ModelErrorBoundary>
                 )
@@ -1290,11 +1381,11 @@ export default function HologramViewer({
           makeDefault
         />
 
-        {(bloomStrength > 0 ||
+        {((bloomStrength > 0 && hologramMode !== 'wireframe') ||
           chromaticAberration > 0 ||
           (scanlineOpacity > 0 && hologramMode !== 'textured')) && (
           <EffectComposer multisampling={4}>
-            {bloomStrength > 0 ? (
+            {bloomStrength > 0 && hologramMode !== 'wireframe' ? (
               <Bloom
                 luminanceThreshold={0.15}
                 luminanceSmoothing={0.9}

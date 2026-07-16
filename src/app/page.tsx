@@ -172,7 +172,10 @@ export default function HomePage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          imageUrl: primaryImage.previewUrl,
+          // Send every uploaded angle, not just the primary photo — providers that support
+          // multi-image reconstruction (fal.ai's Trellis) use them all to fill in occluded
+          // geometry/detail instead of guessing from a single view.
+          imageUrls: uploadedImages.map((img) => img.previewUrl),
           productName,
           quality: 'quality',
           forceMock: useDemoMode,

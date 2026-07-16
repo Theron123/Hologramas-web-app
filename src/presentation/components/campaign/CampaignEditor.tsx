@@ -78,8 +78,24 @@ export default function CampaignEditor() {
   const activeVariant = variants[activeVariantIndex];
   const currentTheme = currentCampaign.theme;
 
+  // The 2.5D fallback stores the source photo as model3DUrl — there's no real mesh to
+  // style-export in that case, only the actual .glb models have Realista/Neón/Malla variants.
+  const isModel3DUrlAnImage = !!model3DUrl && (
+    model3DUrl.startsWith('data:image/') ||
+    model3DUrl.startsWith('blob:') ||
+    /\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i.test(model3DUrl)
+  );
+
   const downloadGLB = async () => {
     if (!model3DUrl) return;
+
+    if (!isModel3DUrlAnImage) {
+      // Real 3D mesh: ask the viewer to export exactly what's on screen right now (whichever
+      // render style — Realista/Neón/Malla — is currently selected), not the raw source file.
+      window.dispatchEvent(new CustomEvent('hologram-glb-export-request'));
+      return;
+    }
+
     try {
       const response = await fetch(model3DUrl);
       const blob = await response.blob();
