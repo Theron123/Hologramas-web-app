@@ -4,6 +4,16 @@
 import type { IImageTo3DRepository, ImageTo3DOptions, ImageTo3DResult } from '@domain/repositories';
 import { fal } from '@fal-ai/client';
 
+// Trellis/TripoSR quality knobs — directly trade off render fidelity against fal.ai
+// generation time and per-render cost. Overridable via env without a redeploy.
+const TRELLIS_PARAMS = {
+  ssGuidanceStrength: Number(process.env.FAL_TRELLIS_SS_GUIDANCE_STRENGTH) || 7.5,
+  slatGuidanceStrength: Number(process.env.FAL_TRELLIS_SLAT_GUIDANCE_STRENGTH) || 3.0,
+  ssSamplingSteps: Number(process.env.FAL_TRELLIS_SS_SAMPLING_STEPS) || 12,
+  slatSamplingSteps: Number(process.env.FAL_TRELLIS_SLAT_SAMPLING_STEPS) || 12,
+};
+const TRIPOSR_FOREGROUND_RATIO = Number(process.env.FAL_TRIPOSR_FOREGROUND_RATIO) || 0.85;
+
 export class FalAIImageTo3DAdapter implements IImageTo3DRepository {
   constructor(private readonly apiKey: string) {
     // Configure fal client credentials
@@ -61,10 +71,10 @@ export class FalAIImageTo3DAdapter implements IImageTo3DRepository {
           input: {
             image_url: inputUrl,
             remove_bg: options?.removeBackground ?? true,
-            ss_guidance_strength: 7.5,
-            slat_guidance_strength: 3.0,
-            ss_sampling_steps: 12,
-            slat_sampling_steps: 12,
+            ss_guidance_strength: TRELLIS_PARAMS.ssGuidanceStrength,
+            slat_guidance_strength: TRELLIS_PARAMS.slatGuidanceStrength,
+            ss_sampling_steps: TRELLIS_PARAMS.ssSamplingSteps,
+            slat_sampling_steps: TRELLIS_PARAMS.slatSamplingSteps,
           } as any
         }) as any;
 
@@ -81,7 +91,7 @@ export class FalAIImageTo3DAdapter implements IImageTo3DRepository {
           input: {
             image_url: finalImageUrl,
             remove_background: options?.removeBackground ?? true,
-            foreground_ratio: 0.85,
+            foreground_ratio: TRIPOSR_FOREGROUND_RATIO,
           } as any
         }) as any;
 

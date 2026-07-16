@@ -3,6 +3,9 @@ import type { IVisionRepository, ICopyGenerationRepository } from '@domain/repos
 import type { ProductAnalysis } from '@domain/entities/Product';
 import type { AdCopyVariant, AdPlatform } from '@domain/entities/Campaign';
 
+// Overridable via env so a model deprecation/rename doesn't require a code change + redeploy.
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+
 async function retryWithBackoff<T>(
   fn: () => Promise<T>,
   retries = 3,
@@ -94,7 +97,7 @@ CRITICAL INSTRUCTIONS FOR HIGH QUALITY:
 
     try {
       const model = this.genAI.getGenerativeModel({
-        model: 'gemini-2.5-flash',
+        model: GEMINI_MODEL,
         generationConfig: {
           responseMimeType: 'application/json',
         },
@@ -152,7 +155,7 @@ Provide a clean JSON array response matching this schema (do not wrap in a paren
 
     try {
       const model = this.genAI.getGenerativeModel({
-        model: 'gemini-2.5-flash',
+        model: GEMINI_MODEL,
         generationConfig: {
           responseMimeType: 'application/json',
         },

@@ -52,6 +52,11 @@ interface CampaignStore {
   updateCampaignTheme: (theme: CampaignTheme) => void;
   updateAdCopy: (variants: AdCopyVariant[]) => void;
 
+  // Set when the real AI provider (Gemini/OpenAI) failed and we silently fell back to the
+  // Mock simulator, so the UI can warn the user instead of presenting mock copy as if it were real.
+  campaignFallbackReason: string | null;
+  setCampaignFallbackReason: (reason: string | null) => void;
+
   // 3D Model
   model3DUrl: string | null;
   aiModel3DUrl: string | null;
@@ -121,6 +126,9 @@ export const useCampaignStore = create<CampaignStore>((set, get) => ({
     }
   },
 
+  campaignFallbackReason: null,
+  setCampaignFallbackReason: (reason) => set({ campaignFallbackReason: reason }),
+
   model3DUrl: null,
   aiModel3DUrl: null,
   isMockModel: false,
@@ -155,5 +163,6 @@ export const useCampaignStore = create<CampaignStore>((set, get) => ({
       productColor: '',
       hologramSettings: defaultHologramSettings,
       activeVariantIndex: 0,
+      campaignFallbackReason: null,
     }),
 }));

@@ -3,11 +3,16 @@
 import { useRef, useMemo, Suspense, useEffect, useState, Component, ReactNode } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Stars, Float, useGLTF, Center, useTexture } from '@react-three/drei';
-import { EffectComposer, Bloom } from '@react-three/postprocessing';
+import { EffectComposer, Bloom, ChromaticAberration, Scanline } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import type { CampaignTheme } from '@domain/entities/Campaign';
 import { useCampaignStore } from '@presentation/stores/campaignStore';
 
+// Fixed 360° export loop length (see hologramas.rules §3) — shared by the recorder and by every
+// rotating hologram variant's useFrame, which sync their spin to __hologramRecordingTime.
+const RECORDING_FPS = 30;
+const RECORDING_DURATION_MS = 4000;
+const RECORDING_DURATION_S = RECORDING_DURATION_MS / 1000;
 
 // ─────────────────────────────────────────────────────────────
 // Holographic ShaderMaterial factory
@@ -285,7 +290,7 @@ function HologramModel({
     if (groupRef.current) {
       if ((window as any).__hologramIsRecording) {
         const t = (window as any).__hologramRecordingTime || 0;
-        groupRef.current.rotation.y = (t / 4) * Math.PI * 2;
+        groupRef.current.rotation.y = (t / RECORDING_DURATION_S) * Math.PI * 2;
       } else {
         groupRef.current.rotation.y += delta * rotationSpeed * 0.4;
       }
@@ -353,57 +358,98 @@ function ProjectionCone({ color }: { color: string }) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Client-side Convolution Sharpening Filter (Unsharp Mask)
+// GPU Convolution Sharpening Filter (Unsharp Mask)
+// Renders the source image into an offscreen render target through a fragment shader
+// that applies the same 5-tap unsharp-mask kernel previously computed pixel-by-pixel on
+// the CPU, then reads the result back for the point-cloud pixel-mapping step below.
+// This moves the O(width*height) convolution math from JS to the GPU.
 // ─────────────────────────────────────────────────────────────
-function sharpenImageData(ctx: CanvasRenderingContext2D, width: number, height: number) {
-  try {
-    const imgData = ctx.getImageData(0, 0, width, height);
-    const data = imgData.data;
-    const originalData = new Uint8ClampedArray(data);
+const SHARPEN_VERTEX_SHADER = `
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = vec4(position, 1.0);
+  }
+`;
 
+const SHARPEN_FRAGMENT_SHADER = `
+  uniform sampler2D uTexture;
+  uniform vec2 uTexel;
+  varying vec2 vUv;
+  void main() {
     // Sharpening Convolution Kernel:
     // [  0, -1.2,   0  ]
     // [ -1.2,  5.8, -1.2]
     // [  0, -1.2,   0  ]
-    const weights = [
-       0,   -1.2,    0,
-      -1.2,  5.8, -1.2,
-       0,   -1.2,    0
-    ];
-    const side = 3;
-    const halfSide = 1;
+    vec4 c = texture2D(uTexture, vUv);
+    vec4 n = texture2D(uTexture, vUv + vec2(0.0, uTexel.y));
+    vec4 s = texture2D(uTexture, vUv - vec2(0.0, uTexel.y));
+    vec4 e = texture2D(uTexture, vUv + vec2(uTexel.x, 0.0));
+    vec4 w = texture2D(uTexture, vUv - vec2(uTexel.x, 0.0));
 
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const dstOff = (y * width + x) * 4;
-        
-        // Skip convolution for fully transparent pixels to save computation
-        if (originalData[dstOff + 3] < 10) continue;
-
-        let r = 0, g = 0, b = 0;
-        for (let cy = 0; cy < side; cy++) {
-          for (let cx = 0; cx < side; cx++) {
-            const scy = Math.min(height - 1, Math.max(0, y + cy - halfSide));
-            const scx = Math.min(width - 1, Math.max(0, x + cx - halfSide));
-            const srcOff = (scy * width + scx) * 4;
-            const wt = weights[cy * side + cx];
-
-            r += originalData[srcOff] * wt;
-            g += originalData[srcOff + 1] * wt;
-            b += originalData[srcOff + 2] * wt;
-          }
-        }
-
-        // Clamp values 0-255 and write back
-        data[dstOff]     = Math.min(255, Math.max(0, r));
-        data[dstOff + 1] = Math.min(255, Math.max(0, g));
-        data[dstOff + 2] = Math.min(255, Math.max(0, b));
-      }
-    }
-    ctx.putImageData(imgData, 0, 0);
-  } catch (err) {
-    console.error("Failed to sharpen canvas image data:", err);
+    vec3 sharpened = c.rgb * 5.8 - (n.rgb + s.rgb + e.rgb + w.rgb) * 1.2;
+    gl_FragColor = vec4(clamp(sharpened, 0.0, 1.0), c.a);
   }
+`;
+
+function sharpenImageOnGPU(
+  gl: THREE.WebGLRenderer,
+  img: HTMLImageElement,
+  size: number,
+): Uint8ClampedArray {
+  const texture = new THREE.Texture(img);
+  texture.needsUpdate = true;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
+  // Disable sRGB-aware sampling so the shader reads/writes raw byte values,
+  // matching what ctx.getImageData used to hand the CPU convolution.
+  texture.colorSpace = THREE.NoColorSpace;
+
+  const renderTarget = new THREE.WebGLRenderTarget(size, size, {
+    type: THREE.UnsignedByteType,
+    format: THREE.RGBAFormat,
+    colorSpace: THREE.NoColorSpace,
+  });
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      uTexture: { value: texture },
+      uTexel: { value: new THREE.Vector2(1 / size, 1 / size) },
+    },
+    vertexShader: SHARPEN_VERTEX_SHADER,
+    fragmentShader: SHARPEN_FRAGMENT_SHADER,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+  scene.add(quad);
+
+  const prevTarget = gl.getRenderTarget();
+  gl.setRenderTarget(renderTarget);
+  gl.render(scene, camera);
+  gl.setRenderTarget(prevTarget);
+
+  const raw = new Uint8Array(size * size * 4);
+  gl.readRenderTargetPixels(renderTarget, 0, 0, size, size, raw);
+
+  // WebGL render targets read back bottom-to-top; flip rows so row 0 is the top of the
+  // image, matching the top-down pixel order the point-cloud mapping code expects.
+  const flipped = new Uint8ClampedArray(size * size * 4);
+  const rowBytes = size * 4;
+  for (let row = 0; row < size; row++) {
+    const srcRow = size - 1 - row;
+    flipped.set(raw.subarray(srcRow * rowBytes, (srcRow + 1) * rowBytes), row * rowBytes);
+  }
+
+  texture.dispose();
+  material.dispose();
+  quad.geometry.dispose();
+  renderTarget.dispose();
+
+  return flipped;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -415,14 +461,17 @@ function HologramVolumetricParticles({
   rotationSpeed,
   glowIntensity,
   hideDecorations = false,
+  gridResolution = 256,
 }: {
   url: string;
   theme: CampaignTheme;
   rotationSpeed: number;
   glowIntensity: number;
   hideDecorations?: boolean;
+  gridResolution?: number;
 }) {
   const pointsRef = useRef<THREE.Points>(null);
+  const { gl } = useThree();
   const [particlesData, setParticlesData] = useState<{
     positions: Float32Array;
     colors: Float32Array;
@@ -444,21 +493,18 @@ function HologramVolumetricParticles({
     img.onload = () => {
       if (!active) return;
       try {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        const size = gridResolution; // grid resolution for volumetric text and logo detail
 
-        const size = 512; // 512x512 grid (4x the points of the previous 256 grid) for razor-sharp volumetric text and logos — GPU-bound, safe on discrete graphics cards
-        canvas.width = size;
-        canvas.height = size;
-        ctx.drawImage(img, 0, 0, size, size);
+        // GPU-sharpened pixel buffer (replaces the old canvas 2D + CPU convolution pass)
+        const imageData = sharpenImageOnGPU(gl, img, size);
 
-        // Apply programmatic sharpening convolution filter to make text and details highly defined
-        sharpenImageData(ctx, size, size);
-
-        const imageData = ctx.getImageData(0, 0, size, size).data;
-        const positions: number[] = [];
-        const colors: number[] = [];
+        // Preallocate typed arrays up-front (2 particles per opaque pixel max) instead of
+        // growing a plain JS array via push() and converting it afterwards — avoids GC churn
+        // and dynamic reallocation for grids up to hundreds of thousands of potential points.
+        const maxParticles = size * size * 2;
+        const positions = new Float32Array(maxParticles * 3);
+        const colors = new Float32Array(maxParticles * 3);
+        let particleCount = 0;
 
         // Check if the source image already has alpha channel transparency (e.g. cutouts)
         // If it does, we don't filter out white or black pixels, preserving full logos and text details!
@@ -523,18 +569,22 @@ function HologramVolumetricParticles({
             const finalB = THREE.MathUtils.lerp(normB, glowCol.b, 0.25);
 
             // Front shell particle
-            positions.push(posX, posY, finalZFront);
-            colors.push(finalR, finalG, finalB);
+            let off = particleCount * 3;
+            positions[off] = posX; positions[off + 1] = posY; positions[off + 2] = finalZFront;
+            colors[off] = finalR; colors[off + 1] = finalG; colors[off + 2] = finalB;
+            particleCount++;
 
             // Back shell particle (simulate full 3D body, slightly darker for depth)
-            positions.push(posX, posY, finalZBack);
-            colors.push(finalR * 0.65, finalG * 0.65, finalB * 0.65);
+            off = particleCount * 3;
+            positions[off] = posX; positions[off + 1] = posY; positions[off + 2] = finalZBack;
+            colors[off] = finalR * 0.65; colors[off + 1] = finalG * 0.65; colors[off + 2] = finalB * 0.65;
+            particleCount++;
           }
         }
 
         setParticlesData({
-          positions: new Float32Array(positions),
-          colors: new Float32Array(colors),
+          positions: positions.subarray(0, particleCount * 3),
+          colors: colors.subarray(0, particleCount * 3),
         });
       } catch (err) {
         console.error("Error generating volumetric particles:", err);
@@ -544,13 +594,13 @@ function HologramVolumetricParticles({
     return () => {
       active = false;
     };
-  }, [url, theme.glowColor]);
+  }, [url, theme.glowColor, gridResolution, gl]);
 
   useFrame(({ clock }) => {
     if (pointsRef.current) {
       if ((window as any).__hologramIsRecording) {
         const t = (window as any).__hologramRecordingTime || 0;
-        pointsRef.current.rotation.y = (t / 4) * Math.PI * 2;
+        pointsRef.current.rotation.y = (t / RECORDING_DURATION_S) * Math.PI * 2;
         pointsRef.current.position.y = 0; // lock height wave motion during recording for perfect loop
       } else {
         // Rotate the point cloud
@@ -667,7 +717,7 @@ function PlaceholderOrb({ theme }: { theme: CampaignTheme }) {
     if (groupRef.current) {
       if ((window as any).__hologramIsRecording) {
         const t = (window as any).__hologramRecordingTime || 0;
-        groupRef.current.rotation.y = (t / 4) * Math.PI * 2;
+        groupRef.current.rotation.y = (t / RECORDING_DURATION_S) * Math.PI * 2;
       } else {
         groupRef.current.rotation.y += delta * 0.35;
       }
@@ -956,8 +1006,8 @@ function CanvasRecorderController({
           (window as any).__hologramRecordingTime = 0;
           recordingStartTime.current = Date.now();
 
-          // Capture canvas stream at 30 fps
-          const stream = gl.domElement.captureStream(30);
+          // Capture canvas stream at RECORDING_FPS
+          const stream = gl.domElement.captureStream(RECORDING_FPS);
 
           let mimeType = 'video/webm;codecs=vp9';
           let extension = 'webm';
@@ -1012,12 +1062,12 @@ function CanvasRecorderController({
 
           recorder.start();
 
-          // Record exactly 4 seconds
+          // Record exactly RECORDING_DURATION_MS
           setTimeout(() => {
             if (recorder.state !== 'inactive') {
               recorder.stop();
             }
-          }, 4000);
+          }, RECORDING_DURATION_MS);
 
         } catch (err) {
           console.error('Failed to record canvas:', err);
@@ -1040,7 +1090,7 @@ function CanvasRecorderController({
   useFrame(() => {
     if (recordingStartTime.current !== null) {
       const elapsed = Date.now() - recordingStartTime.current;
-      const t = Math.min(4000, elapsed) / 1000;
+      const t = Math.min(RECORDING_DURATION_MS, elapsed) / 1000;
       (window as any).__hologramRecordingTime = t;
     }
   });
@@ -1066,7 +1116,14 @@ export interface HologramViewerProps {
   particleCount?: number;
   hologramMode?: 'textured' | 'neon' | 'wireframe';
   productColor?: string;
+  /** Point cloud grid resolution for the 2.5D volumetric fallback mode (default 512). Higher = more detail, more GPU load. */
+  pointCloudResolution?: number;
+  /** GPU bloom post-processing intensity (matches the existing "Bloom / Resplandor" campaign setting). 0 disables the pass entirely. */
   bloomStrength?: number;
+  /** GPU chromatic aberration offset (matches the existing campaign setting of the same name). 0 disables the pass entirely. */
+  chromaticAberration?: number;
+  /** GPU scanline overlay opacity (matches the existing campaign setting of the same name). 0 disables the pass; ignored in 'textured' mode to keep the realistic render clean. */
+  scanlineOpacity?: number;
 }
 
 export default function HologramViewer({
@@ -1080,7 +1137,10 @@ export default function HologramViewer({
   particleCount = 150,
   hologramMode = 'textured',
   productColor = '',
-  bloomStrength = 1.5,
+  pointCloudResolution = 512,
+  bloomStrength = 1.2,
+  chromaticAberration = 0,
+  scanlineOpacity = 0,
 }: HologramViewerProps) {
   const [facePosition, setFacePosition] = useState<'LEFT' | 'CENTER' | 'RIGHT' | 'NONE' | 'OFFLINE'>('NONE');
   
@@ -1180,6 +1240,7 @@ export default function HologramViewer({
                     rotationSpeed={rotationSpeed}
                     glowIntensity={glowIntensity}
                     hideDecorations={hideDecorations}
+                    gridResolution={pointCloudResolution}
                   />
                 ) : (
                   <ModelErrorBoundary
@@ -1191,6 +1252,7 @@ export default function HologramViewer({
                           rotationSpeed={rotationSpeed}
                           glowIntensity={glowIntensity}
                           hideDecorations={hideDecorations}
+                          gridResolution={pointCloudResolution}
                         />
                       ) : (
                         <PlaceholderOrb theme={theme} />
@@ -1228,15 +1290,26 @@ export default function HologramViewer({
           makeDefault
         />
 
-        {/* Real Bloom pass — replaces the previously dead "Bloom" slider */}
-        <EffectComposer multisampling={0} enableNormalPass={false}>
-          <Bloom
-            intensity={bloomStrength}
-            luminanceThreshold={0.15}
-            luminanceSmoothing={0.9}
-            mipmapBlur
-          />
-        </EffectComposer>
+        {(bloomStrength > 0 ||
+          chromaticAberration > 0 ||
+          (scanlineOpacity > 0 && hologramMode !== 'textured')) && (
+          <EffectComposer multisampling={4}>
+            {bloomStrength > 0 ? (
+              <Bloom
+                luminanceThreshold={0.15}
+                luminanceSmoothing={0.9}
+                intensity={bloomStrength}
+                mipmapBlur
+              />
+            ) : <></>}
+            {chromaticAberration > 0 ? (
+              <ChromaticAberration offset={[chromaticAberration, chromaticAberration]} />
+            ) : <></>}
+            {scanlineOpacity > 0 && hologramMode !== 'textured' ? (
+              <Scanline density={1.25} opacity={scanlineOpacity} />
+            ) : <></>}
+          </EffectComposer>
+        )}
       </Canvas>
 
       {/* Recording progress overlay */}

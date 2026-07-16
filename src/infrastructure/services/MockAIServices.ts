@@ -5,19 +5,36 @@
 
 import type { IImageTo3DRepository, ImageTo3DOptions, ImageTo3DResult } from '@domain/repositories';
 
-// These are real, publicly available self-contained .glb files from Three.js official examples
-export const DEMO_MODELS = [
+// Category -> demo GLB lookup for Mock 3D generation. All URLs point at third-party-hosted
+// sample assets (threejs.org, modelviewer.dev, KhronosGroup's sample repo on GitHub) — none of
+// these are under our control, so if one goes offline the affected category silently falls back
+// to the 2.5D point-cloud projection of the uploaded photo (handled by HologramViewer's
+// ModelErrorBoundary), not a hard crash. Centralized here as one table instead of scattered
+// if-blocks so updating/replacing an entry only requires touching one line.
+const MOCK_MODEL_CATEGORIES: Array<{ pattern: RegExp; url: string }> = [
   {
-    url: 'https://threejs.org/examples/models/gltf/Parrot.glb',
-    name: 'Guacamayo (Parrot)',
+    pattern: /\b(car|carro|auto|coche|vehiculo|ferrari|tesla|bmw|ford|toyota|moto|truck|bentley|porsche|audi|mercedes|lamborghini|aston|bugatti|mclaren|chevrolet|nissan|dodge|mustang|suv|racing|racecar)\b/i,
+    url: 'https://threejs.org/examples/models/gltf/ferrari.glb',
   },
   {
-    url: 'https://threejs.org/examples/models/gltf/Flamingo.glb',
-    name: 'Flamenco (Flamingo)',
+    pattern: /\b(audifono|auricular|audio|parlante|bocina|musica|boombox|speaker|headphone|sound|soundbar)\b/i,
+    url: 'https://threejs.org/examples/models/gltf/BoomBox.glb',
   },
   {
-    url: 'https://threejs.org/examples/models/gltf/Stork.glb',
-    name: 'Cigüeña (Stork)',
+    pattern: /\b(silla|mueble|chair|furniture|butaca|sofa|mesa|desk)\b/i,
+    url: 'https://threejs.org/examples/models/gltf/SheenChair.glb',
+  },
+  {
+    pattern: /\b(zapato|tenis|shoe|sneaker|bota|running|calzado)\b/i,
+    url: 'https://modelviewer.dev/shared-assets/models/glTF-Sample-Models/2.0/MaterialsVariantsShoe/glTF-Binary/MaterialsVariantsShoe.glb',
+  },
+  {
+    pattern: /\b(aguacate|avocado|comida|fruta|vegetal|food|fruit)\b/i,
+    url: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Avocado/glTF-Binary/Avocado.glb',
+  },
+  {
+    pattern: /\b(robot|ia|ai|androide|tecnologia|tech|processor|chip)\b/i,
+    url: 'https://threejs.org/examples/models/gltf/RobotExpressive/RobotExpressive.glb',
   },
 ];
 
@@ -29,48 +46,9 @@ export class MockImageTo3DAdapter implements IImageTo3DRepository {
 
     const name = (options?.productName || '').toLowerCase().trim();
 
-    // Map categories to high-quality Three.js official GLBs
-    // Car/Auto
-    if (/\b(car|carro|auto|coche|vehiculo|ferrari|tesla|bmw|ford|toyota|moto|truck|bentley|porsche|audi|mercedes|lamborghini|aston|bugatti|mclaren|chevrolet|nissan|dodge|mustang|suv|racing|racecar)\b/i.test(name)) {
-      return {
-        modelUrl: 'https://threejs.org/examples/models/gltf/ferrari.glb',
-        isMock: true,
-      };
-    }
-    // Audio/BoomBox
-    if (/\b(audifono|auricular|audio|parlante|bocina|musica|boombox|speaker|headphone|sound|soundbar)\b/i.test(name)) {
-      return {
-        modelUrl: 'https://threejs.org/examples/models/gltf/BoomBox.glb',
-        isMock: true,
-      };
-    }
-    // Chair/Furniture
-    if (/\b(silla|mueble|chair|furniture|butaca|sofa|mesa|desk)\b/i.test(name)) {
-      return {
-        modelUrl: 'https://threejs.org/examples/models/gltf/SheenChair.glb',
-        isMock: true,
-      };
-    }
-    // Shoe/Running
-    if (/\b(zapato|tenis|shoe|sneaker|bota|running|calzado)\b/i.test(name)) {
-      return {
-        modelUrl: 'https://modelviewer.dev/shared-assets/models/glTF-Sample-Models/2.0/MaterialsVariantsShoe/glTF-Binary/MaterialsVariantsShoe.glb',
-        isMock: true,
-      };
-    }
-    // Avocado/Food
-    if (/\b(aguacate|avocado|comida|fruta|vegetal|food|fruit)\b/i.test(name)) {
-      return {
-        modelUrl: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Avocado/glTF-Binary/Avocado.glb',
-        isMock: true,
-      };
-    }
-    // Robot/Tech
-    if (/\b(robot|ia|ai|androide|tecnologia|tech|processor|chip)\b/i.test(name)) {
-      return {
-        modelUrl: 'https://threejs.org/examples/models/gltf/RobotExpressive/RobotExpressive.glb',
-        isMock: true,
-      };
+    const match = MOCK_MODEL_CATEGORIES.find((category) => category.pattern.test(name));
+    if (match) {
+      return { modelUrl: match.url, isMock: true };
     }
 
     // Default fallback: project the actual uploaded image URL as a 2.5D hologram

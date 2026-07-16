@@ -1,7 +1,21 @@
 import type { IImageTo3DRepository, ImageTo3DOptions, ImageTo3DResult } from '@domain/repositories';
 import { Client, handle_file } from '@gradio/client';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
+
+// Public, free Hugging Face Spaces used as a keyless fallback when no FAL_KEY is configured.
+// Overridable via env in case these Spaces get renamed, rate-limited, or deprecated.
+const TRELLIS_SPACE = process.env.GRADIO_TRELLIS_SPACE || 'microsoft/TRELLIS.2';
+const TRIPOSR_SPACE = process.env.GRADIO_TRIPOSR_SPACE || 'stabilityai/TripoSR';
+
+// Free HF Spaces queue times vary a lot depending on load. This multiplier scales every
+// step timeout below without needing a separate env var per step.
+const TIMEOUT_MULTIPLIER = Number(process.env.GRADIO_TIMEOUT_MULTIPLIER) || 1;
+
+function scaledTimeout(ms: number): number {
+  return Math.round(ms * TIMEOUT_MULTIPLIER);
+}
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   let timeoutId: NodeJS.Timeout | undefined;
@@ -23,14 +37,15 @@ export class GradioImageTo3DAdapter implements IImageTo3DRepository {
   }
 
   async convert(imageUrl: string, options?: ImageTo3DOptions): Promise<ImageTo3DResult> {
-    console.log('GradioImageTo3DAdapter: Starting 3D model generation on microsoft/TRELLIS.2...');
-    
+    console.log(`GradioImageTo3DAdapter: Starting 3D model generation on ${TRELLIS_SPACE}...`);
+
     let localTempPath: string | null = null;
     let fileInput: any;
 
     try {
-      // Create scratch directory if it doesn't exist
-      const scratchDir = path.resolve('scratch');
+      // Use the OS temp dir (not a project-relative folder) so this also works on serverless
+      // hosts like Vercel, where the filesystem is read-only outside of os.tmpdir().
+      const scratchDir = path.join(os.tmpdir(), 'holoforge-scratch');
       if (!fs.existsSync(scratchDir)) {
         fs.mkdirSync(scratchDir, { recursive: true });
       }
@@ -57,21 +72,21 @@ export class GradioImageTo3DAdapter implements IImageTo3DRepository {
         ? { token: this.hfToken as `hf_${string}` }
         : {};
 
-      // 2. Try microsoft/TRELLIS.2 first (high quality, textured mesh)
+      // 2. Try TRELLIS.2 first (high quality, textured mesh)
       try {
-        console.log('GradioImageTo3DAdapter: Connecting to microsoft/TRELLIS.2...');
+        console.log(`GradioImageTo3DAdapter: Connecting to ${TRELLIS_SPACE}...`);
         const app = await withTimeout(
-          Client.connect('microsoft/TRELLIS.2', connectOptions),
-          15000,
+          Client.connect(TRELLIS_SPACE, connectOptions),
+          scaledTimeout(15000),
           'TRELLIS.2 Connect'
         );
-        console.log('GradioImageTo3DAdapter: Connected to microsoft/TRELLIS.2 successfully.');
+        console.log(`GradioImageTo3DAdapter: Connected to ${TRELLIS_SPACE} successfully.`);
 
         // Step 1: Preprocess Image
         console.log('GradioImageTo3DAdapter: Preprocessing image on TRELLIS.2...');
         const preprocessResult = await withTimeout(
           app.predict('/preprocess_image', [fileInput]),
-          12000,
+          scaledTimeout(12000),
           'TRELLIS.2 Preprocess'
         ) as any;
         const preprocessedImg = preprocessResult?.data?.[0];
@@ -99,7 +114,7 @@ export class GradioImageTo3DAdapter implements IImageTo3DRepository {
             12,              // 14. tex_slat_sampling_steps
             3                // 15. tex_slat_rescale_t
           ]),
-          50000,
+          scaledTimeout(50000),
           'TRELLIS.2 ImageTo3D'
         ) as any;
 
@@ -111,7 +126,7 @@ export class GradioImageTo3DAdapter implements IImageTo3DRepository {
             100000,          // 2. decimation_target (100k for optimal loading performance)
             1024             // 3. texture_size
           ]),
-          40000,
+          scaledTimeout(40000),
           'TRELLIS.2 ExtractGLB'
         ) as any;
 
@@ -133,10 +148,10 @@ export class GradioImageTo3DAdapter implements IImageTo3DRepository {
 
         // 3. Fallback to TripoSR (fast, mesh-only fallback)
         try {
-          console.log('GradioImageTo3DAdapter: Connecting to stabilityai/TripoSR...');
+          console.log(`GradioImageTo3DAdapter: Connecting to ${TRIPOSR_SPACE}...`);
           const app = await withTimeout(
-            Client.connect('stabilityai/TripoSR', connectOptions),
-            12000,
+            Client.connect(TRIPOSR_SPACE, connectOptions),
+            scaledTimeout(12000),
             'TripoSR Connect'
           );
           console.log('GradioImageTo3DAdapter: Connected to TripoSR successfully.');
@@ -148,7 +163,7 @@ export class GradioImageTo3DAdapter implements IImageTo3DRepository {
               options?.removeBackground ?? true,
               0.85
             ]),
-            12000,
+            scaledTimeout(12000),
             'TripoSR Preprocess'
           ) as any;
 
@@ -163,7 +178,7 @@ export class GradioImageTo3DAdapter implements IImageTo3DRepository {
               processedImg,
               64 // resolution
             ]),
-            20000,
+            scaledTimeout(20000),
             'TripoSR Generate'
           ) as any;
 

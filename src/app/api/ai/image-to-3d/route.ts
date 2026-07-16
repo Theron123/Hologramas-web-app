@@ -13,10 +13,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'imageUrl is required' }, { status: 400 });
     }
 
-    // Use real fal.ai adapter if API key is active, or use free Gradio client, or use mock in demo mode
+    // Use real fal.ai adapter if API key is active, or use free Gradio client, or use mock in demo mode.
+    // FAL_KEY_DISABLED_PREFIXES lets us treat known placeholder/expired demo keys (e.g. ones baked
+    // into a starter template) as "not configured" instead of sending real requests that would just
+    // fail with an auth error. Comma-separated; defaults cover the known placeholder values.
     const falKey = process.env.FAL_KEY;
-    const isFalKeyActive = falKey && falKey !== 'locked' && !falKey.startsWith('f54465d8-');
-    
+    const disabledFalKeyPrefixes = (process.env.FAL_KEY_DISABLED_PREFIXES || 'locked,f54465d8-')
+      .split(',')
+      .map((prefix) => prefix.trim())
+      .filter(Boolean);
+    const isFalKeyActive =
+      !!falKey && !disabledFalKeyPrefixes.some((prefix) => falKey === prefix || falKey.startsWith(prefix));
+
     let repo;
     if (forceMock) {
       console.log('Using Mock 3D adapter (Modo Demo)...');

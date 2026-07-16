@@ -3,6 +3,9 @@ import type { IVisionRepository, ICopyGenerationRepository } from '@domain/repos
 import type { ProductAnalysis } from '@domain/entities/Product';
 import type { AdCopyVariant, AdPlatform } from '@domain/entities/Campaign';
 
+// Overridable via env so a model deprecation/rename doesn't require a code change + redeploy.
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o';
+
 export class OpenAIVisionAdapter implements IVisionRepository {
   private readonly openai: OpenAI;
 
@@ -35,7 +38,7 @@ Provide a clean JSON response matching this TypeScript schema:
 
     try {
       const response = await this.openai.chat.completions.create({
-        model: 'gpt-4o',
+        model: OPENAI_MODEL,
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: systemPrompt },
@@ -92,7 +95,7 @@ Provide a clean JSON array response matching this TypeScript schema:
 
     try {
       const response = await this.openai.chat.completions.create({
-        model: 'gpt-4o',
+        model: OPENAI_MODEL,
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: systemPrompt },

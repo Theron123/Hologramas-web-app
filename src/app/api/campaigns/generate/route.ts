@@ -20,17 +20,26 @@ export async function POST(req: NextRequest) {
     
     let visionRepo;
     let copyRepo;
+    // Which provider we *intended* to use, so we can tell a deliberate demo/mock request
+    // apart from a real provider silently failing and falling back to Mock below.
+    let attemptedProvider: 'gemini' | 'openai' | null = null;
+    let provider: 'gemini' | 'openai' | 'mock';
 
     if (geminiKey && !forceMock) {
       console.log('Using Gemini API for product analysis & copywriting...');
+      attemptedProvider = 'gemini';
+      provider = 'gemini';
       visionRepo = new GeminiVisionAdapter(geminiKey);
       copyRepo = new GeminiCopyGenerationAdapter(geminiKey);
     } else if (openaiKey && !forceMock) {
       console.log('Using OpenAI API for product analysis & copywriting...');
+      attemptedProvider = 'openai';
+      provider = 'openai';
       visionRepo = new OpenAIVisionAdapter(openaiKey);
       copyRepo = new OpenAICopyGenerationAdapter(openaiKey);
     } else {
       console.log('Using Mock simulator for product analysis & copywriting...');
+      provider = 'mock';
       visionRepo = new MockVisionRepository();
       copyRepo = new MockCopyGenerationRepository();
     }
@@ -40,10 +49,17 @@ export async function POST(req: NextRequest) {
 
     let useCase = new GenerateCampaignUseCase(visionRepo, copyRepo, campaignRepo, productRepo);
     let result;
+    let fallbackReason: string | null = null;
     try {
       result = await useCase.execute({ productName, images, campaignName });
     } catch (apiError) {
       console.warn('AI Campaign generation failed. Falling back to Mock simulation. Error:', apiError);
+      // Only surface this as a "fallback" if a real provider was actually attempted — if we were
+      // already deliberately on Mock (forceMock or no keys), a failure here isn't a fallback.
+      if (attemptedProvider) {
+        fallbackReason = apiError instanceof Error ? apiError.message : 'Error desconocido de la IA';
+      }
+      provider = 'mock';
       const { MockVisionRepository, MockCopyGenerationRepository } = await import('@infrastructure/services/MockAIServices');
       const mockVision = new MockVisionRepository();
       const mockCopy = new MockCopyGenerationRepository();
@@ -55,6 +71,9 @@ export async function POST(req: NextRequest) {
     // Serialize — convert class instances to plain objects
     return NextResponse.json({
       success: true,
+      provider,
+      isMockFallback: fallbackReason !== null,
+      fallbackReason,
       campaign: {
         id: result.campaign.id,
         name: result.campaign.name,

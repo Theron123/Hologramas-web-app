@@ -64,6 +64,7 @@ export default function CampaignEditor() {
     aiModel3DUrl,
     isMockModel,
     setModel3D,
+    campaignFallbackReason,
   } = useCampaignStore();
 
   const [activeTab, setActiveTab] = useState<'copy' | 'hologram' | 'theme'>('copy');
@@ -147,6 +148,24 @@ export default function CampaignEditor() {
             <div className={styles.analysisChips}>
               <span className="badge badge-holo">{currentProduct.aiAnalysis.productType}</span>
               <span className="badge badge-violet">{currentProduct.aiAnalysis.emotionalTone}</span>
+            </div>
+          )}
+          {campaignFallbackReason && (
+            <div
+              style={{
+                marginTop: '0.75rem',
+                padding: '0.5rem 0.7rem',
+                borderRadius: 6,
+                background: 'rgba(255, 45, 189, 0.1)',
+                border: '1px solid rgba(255, 45, 189, 0.35)',
+                fontSize: '0.68rem',
+                lineHeight: 1.4,
+                color: 'var(--holo-pink)',
+              }}
+            >
+              ⚠️ La IA real falló y este copy se generó con el simulador (Mock), no refleja un análisis
+              real del producto.<br />
+              <span style={{ color: 'var(--text-muted)' }}>Motivo: {campaignFallbackReason}</span>
             </div>
           )}
         </div>
@@ -275,6 +294,8 @@ export default function CampaignEditor() {
                 { key: 'rotationSpeed', label: 'Velocidad de Rotación', min: 0, max: 2, step: 0.1 },
                 { key: 'glowIntensity', label: 'Intensidad de Brillo', min: 0.5, max: 3, step: 0.1 },
                 { key: 'bloomStrength', label: 'Bloom / Resplandor', min: 0.5, max: 3, step: 0.1 },
+                { key: 'chromaticAberration', label: 'Aberración Cromática', min: 0, max: 0.01, step: 0.0005 },
+                { key: 'scanlineOpacity', label: 'Líneas de Escaneo', min: 0, max: 1, step: 0.05 },
                 { key: 'particleCount', label: 'Partículas', min: 0, max: 400, step: 10 },
               ].map((ctrl) => (
                 <div key={ctrl.key} className={styles.sliderGroup}>

@@ -72,6 +72,7 @@ export default function HomePage() {
     setModel3D,
     setAIModel3D,
     setProductColor,
+    setCampaignFallbackReason,
   } = useCampaignStore();
 
   const [generationError, setGenerationError] = useState<string | null>(null);
@@ -135,6 +136,8 @@ export default function HomePage() {
       if (!campaignData.success) {
         throw new Error(campaignData.error || 'Error en la generación de campaña');
       }
+
+      setCampaignFallbackReason(campaignData.isMockFallback ? campaignData.fallbackReason : null);
 
       // 2. Set campaign data and transition to Editor immediately!
       const { Campaign } = await import('@domain/entities/Campaign');
@@ -210,7 +213,7 @@ export default function HomePage() {
       setStep('upload');
       setGenerating(false);
     }
-  }, [uploadedImages, productName, useDemoMode, setStep, setGenerating, setGenerating3D, setGenerationProgress, setCampaign, setProduct, setModel3D, setAIModel3D, setProductColor]);
+  }, [uploadedImages, productName, useDemoMode, setStep, setGenerating, setGenerating3D, setGenerationProgress, setCampaign, setProduct, setModel3D, setAIModel3D, setProductColor, setCampaignFallbackReason]);
 
   const theme = currentCampaign?.theme ?? DEFAULT_THEME;
 
@@ -308,6 +311,8 @@ export default function HomePage() {
                 hologramMode={hologramSettings.hologramMode}
                 productColor={productColor}
                 bloomStrength={hologramSettings.bloomStrength}
+                chromaticAberration={hologramSettings.chromaticAberration}
+                scanlineOpacity={hologramSettings.scanlineOpacity}
               />
             </Suspense>
           </div>
