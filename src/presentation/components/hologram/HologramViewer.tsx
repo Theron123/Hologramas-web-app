@@ -260,7 +260,9 @@ function HologramModel({
           createdMaterials.push(depthOnlyMat);
           mesh.material = depthOnlyMat;
 
-          const edgesGeometry = new THREE.EdgesGeometry(mesh.geometry, 15);
+          // Lower angle threshold = more sensitive to subtle curvature changes = more visible
+          // detail in the wireframe (was 15°, which hid a lot of the mesh's actual geometry).
+          const edgesGeometry = new THREE.EdgesGeometry(mesh.geometry, 4);
           createdGeometries.push(edgesGeometry);
           const edgesMaterial = new THREE.LineBasicMaterial({
             color: '#e8eef2',

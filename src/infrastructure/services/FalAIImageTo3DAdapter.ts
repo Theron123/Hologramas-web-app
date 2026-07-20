@@ -14,10 +14,11 @@ const TRELLIS_PARAMS = {
   ssGuidanceStrength: Number(process.env.FAL_TRELLIS_SS_GUIDANCE_STRENGTH) || 8.5,        // range 0-10, default 7.5
   shapeSlatGuidanceStrength: Number(process.env.FAL_TRELLIS_SHAPE_GUIDANCE_STRENGTH) || 8.0, // range 0-10, default 7.5
   // Default is only 1 — fal.ai keeps this low because pushing texture guidance too hard on the
-  // *old* Trellis caused artifacts. We deliberately don't max this out at 10 for the same reason;
-  // 6.0 is a meaningful push toward "stick to the photo's actual colors/detail" without the
-  // documented artifact risk of the extreme end. Tune via env if you see banding/noise in testing.
-  texSlatGuidanceStrength: Number(process.env.FAL_TRELLIS_TEX_GUIDANCE_STRENGTH) || 6.0,  // range 0-10, default 1
+  // *old* Trellis caused artifacts. Raised to match the ss/shape baseline (7.5) now that turning
+  // remesh off confirmed more raw fidelity reads as better, not worse — watch for banding/noise
+  // in testing and back off toward 6.0 if it shows up (that warning was for the old model, not
+  // confirmed on Trellis 2, but the risk direction likely still applies at the extreme end).
+  texSlatGuidanceStrength: Number(process.env.FAL_TRELLIS_TEX_GUIDANCE_STRENGTH) || 7.5,  // range 0-10, default 1
   ssSamplingSteps: Number(process.env.FAL_TRELLIS_SS_SAMPLING_STEPS) || 20,               // range 1-50, default 12
   shapeSlatSamplingSteps: Number(process.env.FAL_TRELLIS_SHAPE_SAMPLING_STEPS) || 20,     // range 1-50, default 12
   texSlatSamplingSteps: Number(process.env.FAL_TRELLIS_TEX_SAMPLING_STEPS) || 20,         // range 1-50, default 12
@@ -32,6 +33,15 @@ const TRELLIS_PARAMS = {
 // sharpens fine texture detail the model picks up from the source photo, at the cost of a full
 // extra model call per image (real wall-clock time). On by default for max fidelity.
 const ENABLE_ESRGAN_PREPASS = process.env.FAL_TRELLIS_ENABLE_ESRGAN !== 'false';
+// 'remesh' rebuilds mesh topology into cleaner/more even triangles (nicer for a designer to
+// retopologize by hand in Blender) but may smooth over fine surface detail in the process.
+// Defaulting to off to test whether raw, unsmoothed detail retention improves texture fidelity;
+// flip to 'true' via env to trade some raw detail back for cleaner editable topology.
+const ENABLE_REMESH = process.env.FAL_TRELLIS_ENABLE_REMESH === 'true';
+// fal-ai/esrgan defaults to 2x even though its default model (RealESRGAN_x4plus) is trained
+// for 4x — asking for less than the model's native factor leaves quality on the table.
+// Range 1-8; 4 matches the model's design without going into diminishing/artifact-prone territory.
+const ESRGAN_SCALE = Number(process.env.FAL_TRELLIS_ESRGAN_SCALE) || 4;
 const TRIPOSR_FOREGROUND_RATIO = Number(process.env.FAL_TRIPOSR_FOREGROUND_RATIO) || 0.85;
 
 export class FalAIImageTo3DAdapter implements IImageTo3DRepository {
@@ -66,7 +76,7 @@ export class FalAIImageTo3DAdapter implements IImageTo3DRepository {
     try {
       console.log('Running image through fal-ai/esrgan to upscale and sharpen texture details...');
       const upscaleResult = await fal.subscribe("fal-ai/esrgan", {
-        input: { image_url: imageUrl }
+        input: { image_url: imageUrl, scale: ESRGAN_SCALE }
       }) as any;
       const upscaledUrl = upscaleResult.data?.image?.url ?? upscaleResult.image?.url;
       if (upscaledUrl) {
@@ -105,7 +115,7 @@ export class FalAIImageTo3DAdapter implements IImageTo3DRepository {
           tex_slat_sampling_steps: TRELLIS_PARAMS.texSlatSamplingSteps,
           texture_size: TRELLIS_PARAMS.textureSize,
           decimation_target: TRELLIS_PARAMS.decimationTarget,
-          remesh: true,
+          remesh: ENABLE_REMESH,
         };
 
         const result = await fal.subscribe(model, {
